@@ -1,0 +1,200 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <title>Sorriso = Música :)</title>
+  <style>
+    body, html {
+      margin: 0;
+      padding: 0;
+      overflow: hidden;
+      background: black;
+      font-family: sans-serif;
+    }
+
+    #start-screen {
+      position: absolute;
+      top: 0; left: 0;
+      width: 100%;
+      height: 100%;
+      background: black;
+      color: white;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      text-align: center;
+      z-index: 999;
+    }
+
+    #start-screen button {
+      padding: 12px 24px;
+      font-size: 18px;
+      margin-top: 20px;
+      background: #00d68f;
+      border: none;
+      color: white;
+      cursor: pointer;
+      border-radius: 8px;
+    }
+
+    #overlay {
+      position: absolute;
+      top: 0; left: 0;
+      width: 100%;
+      height: 100%;
+      background: black;
+      pointer-events: none;
+      opacity: 0;
+      transition: opacity 0.3s linear;
+      z-index: 100;
+    }
+
+    #video {
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 720px;
+      height: 560px;
+      z-index: 1;
+    }
+
+    #msg {
+      position: absolute;
+      top: 10px;
+      left: 10px;
+      color: white;
+      font-size: 20px;
+      background: rgba(0, 0, 0, 0.5);
+      padding: 10px;
+      z-index: 101;
+    }
+  </style>
+</head>
+<body>
+
+<div id="start-screen">
+  <h1>Bem-vindo! 😄</h1>
+  <p>Este site usa sua câmera apenas para detectar sorrisos.<br>Nenhuma imagem será gravada ou enviada.</p>
+  <button onclick="start()">Começar</button>
+</div>
+
+<div id="msg">Carregando...</div>
+<div id="overlay"></div>
+<video id="video" autoplay muted></video>
+<audio id="music" loop>
+  <source src="https://www.dropbox.com/scl/fi/sgdmdcwjc30dvaxqplzsc/estranho.mp3?rlkey=lb4w21rp74tvn8ly304jw0f62&e=1&st=djx5im5s&dl=1" type="audio/mpeg">
+  Seu navegador não suporta áudio.
+</audio>
+
+<script src="https://cdn.jsdelivr.net/npm/@vladmandic/face-api/dist/face-api.min.js"></script>
+<script>
+  const video = document.getElementById('video');
+  const overlay = document.getElementById('overlay');
+  const msg = document.getElementById('msg');
+  const music = document.getElementById('music');
+  const startScreen = document.getElementById('start-screen');
+
+  let lastSmileTime = Date.now();
+  let fading = false;
+  let fadeInterval = null;
+
+  async function setupCamera() {
+    const stream = await navigator.mediaDevices.getUserMedia({ video: {} });
+    video.srcObject = stream;
+    return new Promise((resolve) => {
+      video.onloadedmetadata = () => resolve(video);
+    });
+  }
+
+  async function loadModels() {
+    const MODEL_URL = 'https://cdn.jsdelivr.net/npm/@vladmandic/face-api/model/';
+    await faceapi.nets.tinyFaceDetector.loadFromUri(MODEL_URL);
+    await faceapi.nets.faceExpressionNet.loadFromUri(MODEL_URL);
+  }
+
+  function detectSmile(expressions) {
+    return expressions.happy > 0.6;
+  }
+
+  function startFadeOut() {
+    if (fading) return;
+    fading = true;
+    let opacity = 0;
+    let volume = music.volume;
+
+    fadeInterval = setInterval(() => {
+      opacity += 0.05;
+      volume -= 0.05;
+
+      overlay.style.opacity = Math.min(opacity, 1);
+      music.volume = Math.max(volume, 0);
+
+      if (opacity >= 1) {
+        clearInterval(fadeInterval);
+      }
+    }, 150);
+  }
+
+  function startFadeIn() {
+    if (!fading) return;
+    fading = false;
+    clearInterval(fadeInterval);
+
+    let opacity = parseFloat(overlay.style.opacity);
+    let volume = music.volume;
+
+    fadeInterval = setInterval(() => {
+      opacity -= 0.05;
+      volume += 0.05;
+
+      overlay.style.opacity = Math.max(opacity, 0);
+      music.volume = Math.min(volume, 1);
+
+      if (opacity <= 0) {
+        clearInterval(fadeInterval);
+      }
+    }, 150);
+  }
+
+  async function start() {
+    startScreen.style.display = 'none';
+    await loadModels();
+    await setupCamera();
+
+    music.volume = 0;
+    await music.play();
+
+    const canvas = faceapi.createCanvasFromMedia(video);
+    document.body.append(canvas);
+    canvas.style.display = "none";
+
+    const displaySize = { width: video.width, height: video.height };
+    faceapi.matchDimensions(canvas, displaySize);
+
+    setInterval(async () => {
+      const detections = await faceapi
+        .detectSingleFace(video, new faceapi.TinyFaceDetectorOptions())
+        .withFaceExpressions();
+
+      if (detections) {
+        if (detectSmile(detections.expressions)) {
+          lastSmileTime = Date.now();
+          msg.innerText = "😀 Sorrindo!";
+          startFadeIn();
+        } else {
+          msg.innerText = "😐 Sem sorriso...";
+        }
+      } else {
+        msg.innerText = "Rosto não detectado";
+      }
+
+      const noSmileTime = Date.now() - lastSmileTime;
+      if (noSmileTime > 3000) {
+        startFadeOut();
+      }
+    }, 200);
+  }
+</script>
+</body>
+</html>
